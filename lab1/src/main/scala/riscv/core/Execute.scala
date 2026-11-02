@@ -12,6 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+/*
+思考顺序：拿到哪些数据 → 选择 ALU 输入 → 决定执行什么运算 → 输出结果并判断跳转
+刚学过的译码模块决定“选哪一路”；现在执行模块根据这些控制信号，真正把数据送进运算电路
+*/
+
+
 package riscv.core
 
 import chisel3._
