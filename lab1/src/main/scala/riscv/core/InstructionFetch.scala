@@ -31,7 +31,14 @@ class InstructionFetch extends Module {
     val instruction_address = Output(UInt(Parameters.AddrWidth))
     val instruction = Output(UInt(Parameters.InstructionWidth))
   })
-  val pc = RegInit(ProgramCounter.EntryAddress)
+  val pc = RegInit(ProgramCounter.EntryAddress)     
+  /*  val pc：给这个硬件对象取名为 pc      
+          ！注意和var做区分，val 不能重新赋值，var 可以重新赋值
+          val 不意味着寄存器里的数值不能变化。 它表示 Scala 中的这个名字绑定不变；所描述的硬件寄存器仍然可以更新。
+      RegInit(...)：创建一个寄存器，并指定复位值。
+      ProgramCounter.EntryAddress：程序入口地址；当前项目配置为 0x1000
+
+  */
 
   when(io.instruction_valid) {
     io.instruction := io.instruction_read_data
@@ -40,6 +47,7 @@ class InstructionFetch extends Module {
      pc := io.jump_address_id
      }.otherwise {
      pc := pc + 4.U
+     
      }  
 
 
