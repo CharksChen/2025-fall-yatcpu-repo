@@ -26,17 +26,17 @@ import riscv.Parameters
 
 class Execute extends Module {
   val io = IO(new Bundle {
-    val instruction = Input(UInt(Parameters.InstructionWidth))
-    val instruction_address = Input(UInt(Parameters.AddrWidth))
-    val reg1_data = Input(UInt(Parameters.DataWidth))
-    val reg2_data = Input(UInt(Parameters.DataWidth))
-    val immediate = Input(UInt(Parameters.DataWidth))
-    val aluop1_source = Input(UInt(1.W))
-    val aluop2_source = Input(UInt(1.W))
+    val instruction = Input(UInt(Parameters.InstructionWidth))//当前机器指令
+    val instruction_address = Input(UInt(Parameters.AddrWidth))//当前机器指令的地址,即PC
+    val reg1_data = Input(UInt(Parameters.DataWidth))//寄存器1的数据
+    val reg2_data = Input(UInt(Parameters.DataWidth))//寄存器2的数据
+    val immediate = Input(UInt(Parameters.DataWidth))//立即数
+    val aluop1_source = Input(UInt(1.W))//ALU操作数1的来源选择信号，0表示来自寄存器1，1表示来自指令地址
+    val aluop2_source = Input(UInt(1.W))//ALU操作数2的来源选择信号，0表示来自寄存器2，1表示来自立即数
 
-    val mem_alu_result = Output(UInt(Parameters.DataWidth))
-    val if_jump_flag = Output(Bool())
-    val if_jump_address = Output(UInt(Parameters.DataWidth))
+    val mem_alu_result = Output(UInt(Parameters.DataWidth))//ALU运算结果，供访存模块使用
+    val if_jump_flag = Output(Bool())//是否跳转的标志，供译码模块使用
+    val if_jump_address = Output(UInt(Parameters.DataWidth))//跳转地址，供译码模块使用
   })
 
   val opcode = io.instruction(6, 0)
@@ -45,29 +45,39 @@ class Execute extends Module {
   val rd = io.instruction(11, 7)
   val uimm = io.instruction(19, 15)
 
-  val alu = Module(new ALU)
-  val alu_ctrl = Module(new ALUControl)
+  val alu = Module(new ALU)//	根据操作类型和两个输入，算出结果
+  val alu_ctrl = Module(new ALUControl)//  根据指令的opcode、funct3、funct7，决定ALU要执行的具体运算类型
 
   alu_ctrl.io.opcode := opcode
   alu_ctrl.io.funct3 := funct3
   alu_ctrl.io.funct7 := funct7
 
   // lab1(Execute)
-  alu.io.func := alu_ctrl.io.alu_funct
 
-  alu.io.op1 := Mux(
+  //补充部分很明显就是补做什么运算、操作数 1、操作数 2
+
+  alu.io.func := alu_ctrl.io.alu_funct//ALUControl 的输出 → ALU 的输入
+
+  alu.io.op1 := Mux(//根据 aluop1_source 选择 ALU 的第一个操作数
     io.aluop1_source === ALUOp1Source.InstructionAddress,
     io.instruction_address,
     io.reg1_data
   )
-  alu.io.op2 := Mux(io.aluop2_source === ALUOp2Source.Immediate,
+  alu.io.op2 := Mux(io.aluop2_source === ALUOp2Source.Immediate,//根据 aluop2_source 选择 ALU 的第二个操作数
     io.immediate,
     io.reg2_data
   )
 
   // lab1(Execute) end
 
-  io.mem_alu_result := alu.io.result
+  io.mem_alu_result := alu.io.result//ALU 的输出 → Execute 的输出
+
+  /*
+  是否跳转 =
+    是 jal
+    或者是 jalr
+    或者（是条件分支，并且分支条件成立）
+  */
   io.if_jump_flag := opcode === Instructions.jal ||
     (opcode === Instructions.jalr) ||
     (opcode === InstructionTypes.B) && MuxLookup(
@@ -80,7 +90,17 @@ class Execute extends Module {
         InstructionsTypeB.bge -> (io.reg1_data.asSInt >= io.reg2_data.asSInt),
         InstructionsTypeB.bltu -> (io.reg1_data.asUInt < io.reg2_data.asUInt),
         InstructionsTypeB.bgeu -> (io.reg1_data.asUInt >= io.reg2_data.asUInt)
+
+/*
+| 分支指令 | 跳转条件 |
+| `beq` | 两个值相等 |
+| `bne` | 两个值不等 |
+| `blt` | 第一个值小于第二个，按有符号解释 |
+| `bge` | 第一个值大于等于第二个，按有符号解释 |
+| `bltu` | 第一个值小于第二个，按无符号解释 |
+| `bgeu` | 第一个值大于等于第二个，按无符号解释 |
+*/      
       )
     )
-  io.if_jump_address := io.immediate + Mux(opcode === Instructions.jalr, io.reg1_data, io.instruction_address)
+  io.if_jump_address := io.immediate + Mux(opcode === Instructions.jalr, io.reg1_data, io.instruction_address)//jalr 指令的跳转地址 = 寄存器1的值 + 立即数；其他跳转指令的跳转地址 = 当前指令地址 + 立即数
 }

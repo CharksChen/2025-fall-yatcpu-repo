@@ -21,31 +21,31 @@ import riscv.Parameters
 
 class MemoryAccess extends Module {
   val io = IO(new Bundle() {
-    val alu_result = Input(UInt(Parameters.DataWidth))
-    val reg2_data = Input(UInt(Parameters.DataWidth))
-    val memory_read_enable = Input(Bool())
-    val memory_write_enable = Input(Bool())
-    val funct3 = Input(UInt(3.W))
+    val alu_result = Input(UInt(Parameters.DataWidth))//	ALU 算出的访存地址
+    val reg2_data = Input(UInt(Parameters.DataWidth))//store 指令需要写入内存的数据
+    val memory_read_enable = Input(Bool())//使能信号，用于控制是否进行内存读取操作
+    val memory_write_enable = Input(Bool())//使能信号，用于控制是否进行内存写入操作
+    val funct3 = Input(UInt(3.W))//funct3 字段，用于确定内存访问的类型
 
-    val wb_memory_read_data = Output(UInt(Parameters.DataWidth))
+    val wb_memory_read_data = Output(UInt(Parameters.DataWidth))//	从内存读取的数据，供写回模块使用
 
-    val memory_bundle = Flipped(new RAMBundle)
+    val memory_bundle = Flipped(new RAMBundle)//  与内存模块的接口,与外部内存交换地址、数据和写入控制
   })
-  val mem_address_index = io.alu_result(log2Up(Parameters.WordSize) - 1, 0).asUInt
+  val mem_address_index = io.alu_result(log2Up(Parameters.WordSize) - 1, 0).asUInt// 这行代码是在取“字内偏移”,计算内存地址的索引，用于确定要访问的字节或半字,字内偏移 = 地址 % 4
 
-  io.memory_bundle.write_enable := false.B
-  io.memory_bundle.write_data := 0.U
-  io.memory_bundle.address := io.alu_result
-  io.memory_bundle.write_strobe := VecInit(Seq.fill(Parameters.WordSize)(false.B))
-  io.wb_memory_read_data := 0.U
+  io.memory_bundle.write_enable := false.B//  默认不写入内存
+  io.memory_bundle.write_data := 0.U//  默认写入数据为 0
+  io.memory_bundle.address := io.alu_result//  将 ALU 算出的访存地址传递给内存模块
+  io.memory_bundle.write_strobe := VecInit(Seq.fill(Parameters.WordSize)(false.B))//  默认不写入内存的任何字节
+  io.wb_memory_read_data := 0.U//  默认从内存读取的数据为 0
 
   when(io.memory_read_enable) {
     val data = io.memory_bundle.read_data
-    io.wb_memory_read_data := MuxLookup(
+    io.wb_memory_read_data := MuxLookup(//根据 funct3 字段选择不同的内存访问类型
       io.funct3,
       0.U,
       IndexedSeq(
-        InstructionsTypeL.lb -> MuxLookup(
+        InstructionsTypeL.lb -> MuxLookup(//根据字内偏移选择要读取的字节，并进行符号扩展
           mem_address_index,
           Cat(Fill(24, data(31)), data(31, 24)),
           IndexedSeq(
@@ -54,7 +54,7 @@ class MemoryAccess extends Module {
             2.U -> Cat(Fill(24, data(23)), data(23, 16))
           )
         ),
-        InstructionsTypeL.lbu -> MuxLookup(
+        InstructionsTypeL.lbu -> MuxLookup(//根据字内偏移选择要读取的字节，并进行零扩展
           mem_address_index,
           Cat(Fill(24, 0.U), data(31, 24)),
           IndexedSeq(
@@ -63,18 +63,18 @@ class MemoryAccess extends Module {
             2.U -> Cat(Fill(24, 0.U), data(23, 16))
           )
         ),
-        InstructionsTypeL.lh -> Mux(
+        InstructionsTypeL.lh -> Mux(//根据字内偏移选择要读取的半字，并进行符号扩展
           mem_address_index === 0.U,
           Cat(Fill(16, data(15)), data(15, 0)),
           Cat(Fill(16, data(31)), data(31, 16))
 
         ),
-        InstructionsTypeL.lhu -> Mux(
+        InstructionsTypeL.lhu -> Mux(//根据字内偏移选择要读取的半字，并进行零扩展
           mem_address_index === 0.U,
           Cat(Fill(16, 0.U), data(15, 0)),
           Cat(Fill(16, 0.U), data(31, 16))
         ),
-        InstructionsTypeL.lw -> data
+        InstructionsTypeL.lw -> data//直接读取整个字
       )
     )
   }.elsewhen(io.memory_write_enable) {
@@ -104,3 +104,10 @@ class MemoryAccess extends Module {
     }
   }
 }
+/*
+| 操作 | 数据来源 | 字节写掩码 `[3:0]` |
+| `sb` | 寄存器低 8 位，移到目标字节 | 根据偏移打开一位 |
+| `sh`，偏移 0 | 寄存器低 16 位 | `0011` |
+| `sh`，偏移 2 | 寄存器低 16 位左移 16 位 | `1100` |
+| `sw` | 寄存器完整 32 位 | `1111` |
+*/
