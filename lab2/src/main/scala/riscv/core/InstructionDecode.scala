@@ -12,6 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+/*
+译码重点：从指令提取opcode、funct3、rs1/zimm和CSR地址；CSR指令使用opcode=0x73，读CSR旧值用于写回rd，EX负责计算要写入的新值。
+*/
 package riscv.core
 
 import chisel3._
@@ -92,6 +95,7 @@ object InstructionsTypeB {
   val bgeu = "b111".U
 }
 
+// 六种CSR运算：001/010/011使用rs1，101/110/111使用5位立即数zimm。
 object InstructionsTypeCSR {
   val csrrw = "b001".U
   val csrrs = "b010".U
@@ -125,6 +129,7 @@ object ALUOp2Source {
   val Immediate = 1.U(1.W)
 }
 
+// CSR新增写回数据源，选择CSR旧值供普通寄存器rd写入。
 object RegWriteSource {
   val ALUResult = 0.U(2.W)
   val Memory = 1.U(2.W)
@@ -149,6 +154,7 @@ class InstructionDecode extends Module {
     val csr_reg_write_enable = Output(Bool())
     val csr_reg_address = Output(UInt(Parameters.DataWidth))
   })
+  // RISC-V固定字段切片：opcode[6:0]、funct3[14:12]、rs1/zimm[19:15]、CSR地址[31:20]。
   val opcode = io.instruction(6, 0)
   val funct3 = io.instruction(14, 12)
   val funct7 = io.instruction(31, 25)
@@ -156,8 +162,10 @@ class InstructionDecode extends Module {
   val rs1 = io.instruction(19, 15)
   val rs2 = io.instruction(24, 20)
 
+  // 对CSR立即数指令，此处仍给出rs1地址，但EX会使用指令里的zimm而不是该端口的数据。
   io.regs_reg1_read_address := Mux(opcode === Instructions.lui, 0.U(Parameters.PhysicalRegisterAddrWidth), rs1)
   io.regs_reg2_read_address := rs2
+  // 普通load/store/branch/jump的立即数扩展；CSR zimm无需走这里，EX直接提取。
   val immediate = MuxLookup(
     opcode,
     Cat(Fill(20, io.instruction(31)), io.instruction(31, 20)),
@@ -185,6 +193,7 @@ class InstructionDecode extends Module {
   )
   io.memory_read_enable := opcode === InstructionTypes.L
   io.memory_write_enable := opcode === InstructionTypes.S
+  // CSR指令把CSR旧值写回通用寄存器，所以WB应选择RegWriteSource.CSR。
   io.wb_reg_write_source := MuxLookup(
     opcode,
     RegWriteSource.ALUResult,
@@ -199,7 +208,9 @@ class InstructionDecode extends Module {
     (opcode === InstructionTypes.L) || (opcode === Instructions.auipc) || (opcode === Instructions.lui) ||
     (opcode === Instructions.jal) || (opcode === Instructions.jalr) || (opcode === Instructions.csr)
   io.reg_write_address := io.instruction(11, 7)
+  // CSR独立编址为12位，与MMIO内存地址完全不同。
   io.csr_reg_address := io.instruction(31,20)
+  // 教学实现仅按6种funct3允许CSR写入；尚未完整区分rs1=x0/zimm=0的无写副作用规则。
   io.csr_reg_write_enable := (opcode === Instructions.csr) && (
     funct3 === InstructionsTypeCSR.csrrw || funct3 === InstructionsTypeCSR.csrrwi ||
       funct3 === InstructionsTypeCSR.csrrs || funct3 === InstructionsTypeCSR.csrrsi ||

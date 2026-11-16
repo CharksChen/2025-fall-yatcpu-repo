@@ -12,6 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+/*
+CPU外部接口。区分interrupt_flag（外设提出的请求）和CLINT内部interrupt_assert（CPU决定跳转）。
+*/
 package riscv
 
 import chisel3._
@@ -21,7 +24,9 @@ class CPUBundle extends Bundle {
   val instruction_address = Output(UInt(Parameters.AddrWidth))
   val instruction = Input(UInt(Parameters.DataWidth))
   val instruction_valid = Input(Bool())
+  // 来自Timer/外部设备的中断请求位向量。
   val interrupt_flag = Input(UInt(Parameters.InterruptFlagWidth))
+  // CPU面向外部存储器和MMIO设备的访存接口，方向相对外设翻转。
   val memory_bundle = Flipped(new RAMBundle)
   val deviceSelect = Output(UInt(Parameters.SlaveDeviceCountBits.W))
   val regs_debug_read_address = Input(UInt(Parameters.PhysicalRegisterAddrWidth))

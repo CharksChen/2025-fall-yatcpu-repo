@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# 中断的软件部分：_start调用main；enable_interrupt设置mtvec/mstatus；trap入口保存通用寄存器、调用C函数、恢复现场，最后mret返回。
 .section .text.init
 .globl _start
 _start:
@@ -20,6 +21,7 @@ _start:
 loop:
   j loop      # Loop forever
 .globl enable_interrupt
+# 配置mtvec为__trap_entry，并打开mstatus的MIE位。
 enable_interrupt:
   la t0, __trap_entry
   csrrw t1, mtvec, t0 # setup trap vector base
@@ -43,6 +45,7 @@ get_epc:
 .weak trap_handler
 tran_handler:
   ret
+# trap进入后先把通用寄存器压栈，避免处理程序破坏原程序寄存器状态。
 __trap_entry:
   csrw mscratch, sp
   addi sp, sp, -128
@@ -79,9 +82,11 @@ __trap_entry:
   sw t6, 124(sp)
 
   csrr a0, mepc
+  # 从CSR读取原因到a1；a0已从mepc取得返回PC。
   csrr a1, mcause
   call trap_handler
 
+  # 恢复此前sw保存的寄存器现场。
   lw ra, 4(sp)
 
   lw gp, 12(sp)
@@ -114,4 +119,5 @@ __trap_entry:
   lw t5, 120(sp)
   lw t6, 124(sp)
   csrr sp, mscratch
+  # 恢复到mepc指定的地址，并根据MPIE恢复MIE。
   mret

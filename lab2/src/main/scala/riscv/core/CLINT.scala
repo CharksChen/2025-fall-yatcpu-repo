@@ -12,12 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+/*
+CLINT是组合逻辑中断控制器，不是Timer。读取外设请求/当前指令/PC/普通跳转结果和CSR状态，输出是否覆盖PC以及要写入的CSR状态。
+*/
 package riscv.core
 
 import chisel3._
 import chisel3.util.MuxLookup
 import riscv.Parameters
 
+// 输入中断类型编码（教学项目定义），不是mcause的完整编码。
 object InterruptCode {
   val None = 0x0.U(8.W)
   val Timer0 = 0x1.U(8.W)
@@ -29,12 +33,15 @@ object InterruptEntry {
 }
 
 
+// Bundle按CLINT视角定义信号方向；CSR侧用Flipped反转方向。
 class CSRDirectAccessBundle extends Bundle {
+  // 输入CSR有效状态，bit3用于判断全局中断是否允许。
   val mstatus = Input(UInt(Parameters.DataWidth))
   val mepc = Input(UInt(Parameters.DataWidth))
   val mcause = Input(UInt(Parameters.DataWidth))
   val mtvec = Input(UInt(Parameters.DataWidth))
 
+  // trap或mret时准备写入的mstatus新值。
   val mstatus_write_data= Output(UInt(Parameters.DataWidth))
   val mepc_write_data= Output(UInt(Parameters.DataWidth))
   val mcause_write_data= Output(UInt(Parameters.DataWidth))
@@ -46,25 +53,31 @@ class CSRDirectAccessBundle extends Bundle {
 class CLINT extends Module {
   val io = IO(new Bundle {
     // Interrupt signals from peripherals
+    // 外设送来的请求；请求存在并不保证CPU最终接纳中断。
     val interrupt_flag = Input(UInt(Parameters.InterruptFlagWidth))
 
     val instruction = Input(UInt(Parameters.InstructionWidth))
     val instruction_address = Input(UInt(Parameters.AddrWidth))
 
+    // 当前指令执行跳转时，硬件中断的返回PC应选跳转目标而非PC+4。
     val jump_flag = Input(Bool())
     val jump_address = Input(UInt(Parameters.AddrWidth))
 
     val interrupt_handler_address = Output(UInt(Parameters.AddrWidth))
+    // 通知IF下个周期选择interrupt_handler_address。
     val interrupt_assert = Output(Bool())
 
     val csr_bundle = new CSRDirectAccessBundle
   })
+  // 读取MIE总中断使能位；本拍关闭MIE必须能及时阻止硬件中断。
   val interrupt_enable = io.csr_bundle.mstatus(3)
+  // 局部instruction_address是正常执行完本指令后的下一PC；若跳转就取jump_address，否则PC+4。
   val instruction_address = Mux(
     io.jump_flag,
     io.jump_address,
     io.instruction_address + 4.U,
   )
+  // 实验留白：分情况考虑硬件中断、ecall/ebreak、mret、默认输出；每条分支需完整驱动输出。实验规定ecall时mepc=PC+4，这是教学简化。
   //lab2(CLINTCSR)
   /*
   val interrupt_enable =

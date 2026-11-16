@@ -12,12 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+/*
+RAMBundle统一描述普通RAM和Timer等MMIO的访问端口；write_strobe为按字节写掩码，32位字对应4位。
+*/
 package peripheral
 
 import chisel3._
 import chisel3.util._
 import riscv.Parameters
 
+// RAMBundle以设备为视角定义输入/输出，CPU侧会Flipped反转方向。
 class RAMBundle extends Bundle {
   val address = Input(UInt(Parameters.AddrWidth))
   val write_data = Input(UInt(Parameters.DataWidth))
@@ -52,6 +56,7 @@ class BlockRAM(capacity: Int) extends Module {
   io.debug_read_data := mem.read((io.debug_read_address >> 2.U).asUInt, true.B).asUInt
 }
 
+// 普通内存提供取指/数据访问路径；按32位字索引时需要将字节地址右移2。
 class Memory(capacity: Int) extends Module {
   val io = IO(new Bundle {
     val bundle = new RAMBundle

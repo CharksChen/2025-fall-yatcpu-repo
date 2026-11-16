@@ -12,6 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+/*
+先配置mstatus/mtvec，再注入中断/环境指令；检查interrupt_assert、跳转入口、mepc、mcause、mstatus；最后mret恢复执行。
+*/
 package riscv.singlecycle
 
 import chisel3._
@@ -21,6 +24,7 @@ import riscv.{Parameters, TestAnnotations}
 import riscv.core.{ALUOp1Source, ALUOp2Source, CLINT, CSR, CSRRegister, InstructionDecode, InstructionsNop, InstructionsRet, InstructionsEnv}
 import riscv.core.InterruptCode
 
+// 用人为输入模拟CPU，直接互连真实CLINT和CSR模块。
 class CLINTCSRTestTopModule extends Module {
   val io = IO( new Bundle{
     val csr_regs_debug_read_address = Input(UInt(Parameters.CSRRegisterAddrWidth))
@@ -64,6 +68,7 @@ class CLINTCSRTestTopModule extends Module {
 
 class CLINTCSRTest extends AnyFlatSpec with ChiselScalatestTester{
   behavior of "CLINTCSRTest of Single Cycle CPU"
+  // 硬件中断测试：顺序指令、跳转指令、mret、同拍关闭MIE。
   it should "handle external interrupt" in {
     test(new CLINTCSRTestTopModule).withAnnotations(TestAnnotations.annos) { c =>
 
@@ -81,6 +86,7 @@ class CLINTCSRTest extends AnyFlatSpec with ChiselScalatestTester{
       c.io.csr_regs_write_enable.poke(false.B)
 
 
+      // PC=0x1900顺序执行，按实验要求保存下一PC=0x1904。
       // handle interrupt when not jumping
       c.io.jump_flag.poke(false.B)
       c.io.instruction_address.poke(0x1900L.U)
@@ -100,6 +106,7 @@ class CLINTCSRTest extends AnyFlatSpec with ChiselScalatestTester{
 
       c.clock.step(25)
 
+      // mret跳回mepc，并通过MPIE恢复MIE。
       // mret from interrupt handler
       c.io.instruction.poke(InstructionsRet.mret)
       c.io.interrupt_assert.expect(true.B)
@@ -108,6 +115,7 @@ class CLINTCSRTest extends AnyFlatSpec with ChiselScalatestTester{
       c.io.csr_regs_debug_read_address.poke(CSRRegister.MSTATUS)
       c.io.csr_regs_debug_read_data.expect(0x1888L.U)
 
+      // 跳转指令遇中断时，返回点是跳转目标0x1990而不是PC+4。
       // handle interrupt when jumping
       c.io.jump_flag.poke(true.B)
       c.io.jump_address.poke(0x1990L.U)
@@ -134,6 +142,7 @@ class CLINTCSRTest extends AnyFlatSpec with ChiselScalatestTester{
       c.io.csr_regs_debug_read_data.expect(0x1888L.U)
       c.io.instruction.poke(InstructionsNop.nop)
 
+      // 同拍关闭MIE，CLINT应观察有效新状态，不能响应中断。
       // don't handle interrupt under certain situation
       c.io.csr_regs_write_enable.poke(true.B)
       c.io.csr_regs_write_address.poke(CSRRegister.MSTATUS)
@@ -145,6 +154,7 @@ class CLINTCSRTest extends AnyFlatSpec with ChiselScalatestTester{
 
 
 
+  // ecall与ebreak是同步trap，mcause最高位不标记异步中断。
   it should "handle environmental instructions" in {
     test(new CLINTCSRTestTopModule).withAnnotations(TestAnnotations.annos) { c =>
       val interrupt_entry = 0x1144L.U
@@ -159,6 +169,7 @@ class CLINTCSRTest extends AnyFlatSpec with ChiselScalatestTester{
       c.clock.step()
       c.io.csr_regs_write_enable.poke(false.B)
 
+      // 教学测试期待ecall的mepc=PC+4，与标准RISC-V通常保存触发指令地址不同。
       // ecall
       c.io.instruction.poke(InstructionsEnv.ecall)
       c.io.instruction_address.poke(0x2000L.U)
@@ -183,6 +194,7 @@ class CLINTCSRTest extends AnyFlatSpec with ChiselScalatestTester{
       c.io.csr_regs_debug_read_address.poke(CSRRegister.MSTATUS)
       c.io.csr_regs_debug_read_data.expect(0x1888L.U) 
 
+      // ebreak异常原因码为3，测试期待返回地址0x2008。
       // ebreak
       c.clock.step()
       c.io.instruction.poke(InstructionsEnv.ebreak)

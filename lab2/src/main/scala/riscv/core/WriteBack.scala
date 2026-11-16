@@ -12,6 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+/*
+Lab2新增CSR写回来源。两条路径一定区分：旧CSR值→通用rd；新CSR值→CSR寄存器组。这里处理前者。
+*/
 package riscv.core
 
 import chisel3._
@@ -27,6 +30,7 @@ class WriteBack extends Module {
     val csr_read_data = Input(UInt(Parameters.DataWidth))
     val regs_write_data = Output(UInt(Parameters.DataWidth))
   })
+  // 根据ID控制信号选择ALU结果、访存结果、CSR旧值或PC+4写回rd。
   io.regs_write_data := MuxLookup(
     io.regs_write_source,
     io.alu_result,

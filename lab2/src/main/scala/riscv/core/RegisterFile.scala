@@ -12,6 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+/*
+通用寄存器堆x0..x31：5位地址；不同于12位地址的CSR。x0永远读出0，写入会被丢弃。
+*/
 package riscv.core
 
 import chisel3._
@@ -43,20 +46,24 @@ class RegisterFile extends Module {
     val debug_read_address = Input(UInt(Parameters.PhysicalRegisterAddrWidth))
     val debug_read_data = Output(UInt(Parameters.DataWidth))
   })
+  // 32个32位寄存器，复位为0；写在时钟沿生效。
   val registers = RegInit(VecInit(Seq.fill(Parameters.PhysicalRegisters)(0.U(Parameters.DataWidth))))
 
+  // 只有write_enable且写地址不是0才更新寄存器。
   when(!reset.asBool) {
     when(io.write_enable && io.write_address =/= 0.U) {
       registers(io.write_address) := io.write_data
     }
   }
 
+  // rs1组合读口；读x0直接返回0。
   io.read_data1 := Mux(
     io.read_address1 === 0.U,
     0.U,
     registers(io.read_address1)
   )
 
+  // rs2组合读口，与rs1可同时独立读取。
   io.read_data2 := Mux(
     io.read_address2 === 0.U,
     0.U,

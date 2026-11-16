@@ -12,6 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+/*
+整机测试将ROM、RAM与CPU相连，观察执行结果。SimpleTrapTest专门验证：main配置中断→注入外设请求→中断处理程序写内存→mret返回。
+*/
 package riscv.singlecycle
 
 import board.basys3.BootStates
@@ -25,6 +28,7 @@ import riscv.{Parameters, TestAnnotations}
 import java.nio.{ByteBuffer, ByteOrder}
 
 
+// 测试顶层：加载指定asmbin程序，并把CPU接上内存。
 class TestTopModule(exeFilename: String) extends Module {
   val io = IO(new Bundle {
     val mem_debug_read_address = Input(UInt(Parameters.AddrWidth))
@@ -132,6 +136,7 @@ class ByteAccessTest extends AnyFlatSpec with ChiselScalatestTester {
   }
 }
 
+// 验证的不是单一模块，而是从CPU执行到CLINT响应的完整路径。
 class SimpleTrapTest extends AnyFlatSpec with ChiselScalatestTester {
   behavior of "Single Cycle CPU with CSR and CLINT"
   it should "jump to trap handler and then return" in {
@@ -142,7 +147,9 @@ class SimpleTrapTest extends AnyFlatSpec with ChiselScalatestTester {
       }
       c.io.mem_debug_read_address.poke(4.U)
       c.clock.step()
+      // 主程序先写地址0x4为0xDEADBEEF，证明正常执行阶段完成。
       c.io.mem_debug_read_data.expect(0xDEADBEEFL.U)
+      // 外部请求模拟定时中断；发送后测试会清除请求。
       c.io.interrupt_flag.poke(0x1.U)
       c.clock.step(5)
       c.io.interrupt_flag.poke(0.U)
@@ -156,6 +163,7 @@ class SimpleTrapTest extends AnyFlatSpec with ChiselScalatestTester {
       c.io.csr_regs_debug_read_data.expect(0x80000007L.U)
       c.io.mem_debug_read_address.poke(0x4.U)
       c.clock.step()
+      // trap_handler已执行并将内存0x4改写为0x2022。
       c.io.mem_debug_read_data.expect(0x2022L.U)
     }
   }

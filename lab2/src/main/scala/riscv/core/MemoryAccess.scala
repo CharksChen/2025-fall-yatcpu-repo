@@ -12,6 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+/*
+普通MEM仍复用Lab1的数据通路。后续Timer作为MMIO设备，也使用RAMBundle的地址/数据/字节写掩码接口。
+*/
 package riscv.core
 
 import chisel3._
@@ -31,14 +34,17 @@ class MemoryAccess extends Module {
 
     val memory_bundle = Flipped(new RAMBundle)
   })
+  // 字节地址最低2位是32位字内偏移，用于选择byte/half。
   val mem_address_index = io.alu_result(log2Up(Parameters.WordSize) - 1, 0).asUInt
 
+  // 为组合输出提供默认值，store分支再覆盖。
   io.memory_bundle.write_enable := false.B
   io.memory_bundle.write_data := 0.U
   io.memory_bundle.address := io.alu_result
   io.memory_bundle.write_strobe := VecInit(Seq.fill(Parameters.WordSize)(false.B))
   io.wb_memory_read_data := 0.U
 
+  // load路径：按funct3选择LB/LH/LW/LBU/LHU及扩展方式。
   when(io.memory_read_enable) {
     val data = io.memory_bundle.read_data
     io.wb_memory_read_data := MuxLookup(
@@ -76,6 +82,7 @@ class MemoryAccess extends Module {
         InstructionsTypeL.lw -> data
       )
     )
+  // store路径：根据SB/SH/SW决定write_data和每字节strobe。
   }.elsewhen(io.memory_write_enable) {
     io.memory_bundle.write_data := io.reg2_data
     io.memory_bundle.write_enable := true.B
